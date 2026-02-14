@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Algebra Space Survival</title>
+    <title>Algebra Space Survival v2</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #02050a; touch-action: none; font-family: 'Courier New', sans-serif; }
+        body { margin: 0; overflow: hidden; background: #02050a; touch-action: none; font-family: sans-serif; }
         canvas { display: block; }
     </style>
 </head>
@@ -16,7 +16,7 @@
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// --- 音声 ---
+// --- 音声エンジン ---
 const AudioContext = window.AudioContext || window.webkitAudioContext;
 let audioCtx = null;
 function playSfx(f, t, d, v=0.05) {
@@ -33,23 +33,21 @@ function playSfx(f, t, d, v=0.05) {
 // --- ゲーム変数 ---
 let score = 0;
 let coeff = 1, leftConst = 0, rightSide = 0;
-const player = { x: 0, y: 0, speed: 7 };
+const player = { x: window.innerWidth/2, y: window.innerHeight*0.8, speed: 7 };
 const bullets = [];
 const enemies = [];
-const stars = []; // 背景の星
-const joystick = { active: false, startX: 0, startY: 0, currX: 0, currY: 0 };
+const stars = [];
+const joystick = { active: false, id: null, startX: 0, startY: 0, currX: 0, currY: 0 };
 
 function resize() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
-    player.x = canvas.width / 2;
-    player.y = canvas.height * 0.8;
 }
 window.addEventListener('resize', resize);
 resize();
 
-// 星の初期化
-for(let i=0; i<50; i++) stars.push({x: Math.random()*window.innerWidth, y: Math.random()*window.innerHeight, s: Math.random()*2});
+// 星の背景
+for(let i=0; i<40; i++) stars.push({x: Math.random()*canvas.width, y: Math.random()*canvas.height, s: Math.random()*2 + 1});
 
 function generateEquation() {
     const ans = Math.floor(Math.random() * 9) + 1;
@@ -60,13 +58,13 @@ function generateEquation() {
 
 function fmt(num) { return +(num.toFixed(1)); }
 
+// 計算の適用
 function applyMath(en) {
     if (en.type === '+') { leftConst += en.val; rightSide += en.val; }
     if (en.type === '-') { leftConst -= en.val; rightSide -= en.val; }
     if (en.type === '*') { coeff *= en.val; leftConst *= en.val; rightSide *= en.val; }
     if (en.type === '/') { coeff /= en.val; leftConst /= en.val; rightSide /= en.val; }
     
-    // クリア判定
     if (Math.abs(coeff - 1) < 0.01 && Math.abs(leftConst) < 0.01) {
         score += 150;
         playSfx(523, 'square', 0.1); setTimeout(() => playSfx(783, 'square', 0.3), 150);
@@ -79,41 +77,49 @@ function spawnEnemy() {
     let type, val, label, color;
     if (r < 0.5) {
         type = Math.random() > 0.5 ? '-' : '+';
-        val = (leftConst !== 0 && Math.random() > 0.7) ? Math.abs(leftConst) : Math.floor(Math.random() * 5) + 1;
-        label = (type === '-' ? '－' : '＋') + val;
-        color = '#ff4757';
+        val = (leftConst !== 0 && Math.random() > 0.6) ? Math.abs(leftConst) : Math.floor(Math.random() * 5) + 1;
+        label = (type === '-' ? '－' : '＋') + val; color = '#ff4757';
     } else {
         type = Math.random() > 0.5 ? '/' : '*';
         val = (type === '/' && coeff !== 1) ? coeff : Math.floor(Math.random() * 2) + 2;
-        label = (type === '/' ? '÷' : '×') + val;
-        color = '#54a0ff';
+        label = (type === '/' ? '÷' : '×') + val; color = '#54a0ff';
     }
-    enemies.push({ x: Math.random() * (canvas.width - 60) + 30, y: -50, type, val, label, color, speed: 1.5 + Math.random() * 1.5 });
+    enemies.push({ x: Math.random() * (canvas.width - 60) + 30, y: -50, type, val, label, color, speed: 1.2 + Math.random() * 1.5 });
 }
 
-// --- 入力 ---
+// --- 入力処理 ---
 canvas.addEventListener('touchstart', (e) => {
     for (let t of e.changedTouches) {
         if (t.clientX < canvas.width / 2) {
             joystick.active = true;
+            joystick.id = t.identifier;
             joystick.startX = joystick.currX = t.clientX;
             joystick.startY = joystick.currY = t.clientY;
         } else {
+            // 弾を発射
             bullets.push({ x: player.x, y: player.y - 20 });
-            playSfx(800, 'triangle', 0.05);
+            playSfx(800, 'triangle', 0.05, 0.03);
         }
     }
-}, false);
+}, {passive: false});
 
 canvas.addEventListener('touchmove', (e) => {
-    if (joystick.active) {
-        joystick.currX = e.touches[0].clientX;
-        joystick.currY = e.touches[0].clientY;
+    for (let t of e.changedTouches) {
+        if (joystick.active && t.identifier === joystick.id) {
+            joystick.currX = t.clientX;
+            joystick.currY = t.clientY;
+        }
+    }
+    e.preventDefault();
+}, {passive: false});
+
+canvas.addEventListener('touchend', (e) => {
+    for (let t of e.changedTouches) {
+        if (t.identifier === joystick.id) joystick.active = false;
     }
 }, false);
 
-canvas.addEventListener('touchend', () => { joystick.active = false; }, false);
-
+// --- メインループ ---
 function update() {
     // 星の移動
     stars.forEach(s => { s.y += s.s; if(s.y > canvas.height) s.y = -10; });
@@ -129,34 +135,45 @@ function update() {
         }
     }
 
-    bullets.forEach((b, bi) => { b.y -= 12; if (b.y < 0) bullets.splice(bi, 1); });
+    // 弾の移動 (逆ループで安全に消去)
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        bullets[i].y -= 10;
+        if (bullets[i].y < -20) bullets.splice(i, 1);
+    }
 
-    // 敵の出現頻度を下げた (0.02 -> 0.01)
-    if (Math.random() < 0.012) spawnEnemy();
+    // 敵の出現頻度 (0.01 = さらに少なめ)
+    if (Math.random() < 0.01) spawnEnemy();
 
-    enemies.forEach((en, ei) => {
+    // 敵の移動と当たり判定 (逆ループ)
+    for (let i = enemies.length - 1; i >= 0; i--) {
+        const en = enemies[i];
         en.y += en.speed;
-        if (en.y > canvas.height) enemies.splice(ei, 1);
 
-        // 自機との当たり判定（強制反映！）
+        // 画面外
+        if (en.y > canvas.height + 50) { enemies.splice(i, 1); continue; }
+
+        // 自機との当たり判定 (体当たりで破壊)
         const distToPlayer = Math.sqrt((player.x - en.x)**2 + (player.y - en.y)**2);
         if (distToPlayer < 35) {
             playSfx(150, 'sawtooth', 0.2, 0.1);
             applyMath(en);
-            enemies.splice(ei, 1);
+            enemies.splice(i, 1);
+            continue;
         }
 
-        // 弾との当たり判定
-        bullets.forEach((b, bi) => {
-            const dist = Math.sqrt((b.x - en.x)**2 + (b.y - en.y)**2);
-            if (dist < 30) {
-                playSfx(300, 'sine', 0.1);
+        // 弾との当たり判定 (撃って破壊)
+        for (let j = bullets.length - 1; j >= 0; j--) {
+            const b = bullets[j];
+            const distToBullet = Math.sqrt((b.x - en.x)**2 + (b.y - en.y)**2);
+            if (distToBullet < 30) {
+                playSfx(300, 'sine', 0.1, 0.05);
                 applyMath(en);
-                enemies.splice(ei, 1);
-                bullets.splice(bi, 1);
+                enemies.splice(i, 1); // 敵が消える
+                bullets.splice(j, 1); // 弾も消える
+                break; 
             }
-        });
-    });
+        }
+    }
 
     draw();
     requestAnimationFrame(update);
@@ -166,42 +183,53 @@ function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // 星空
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = '#444';
     stars.forEach(s => ctx.fillRect(s.x, s.y, s.s, s.s));
 
     // 方程式
     ctx.fillStyle = '#00ffcc';
     ctx.textAlign = 'center';
-    ctx.font = 'bold 32px sans-serif';
+    ctx.font = 'bold 28px sans-serif';
     let lText = (fmt(coeff) === 1 ? "" : (fmt(coeff) === -1 ? "-" : fmt(coeff))) + "x";
     if (Math.abs(leftConst) > 0.01) {
         if (leftConst > 0) lText += " + " + fmt(leftConst);
         else lText += " - " + fmt(Math.abs(leftConst));
     }
-    ctx.fillText(`${lText} = ${fmt(rightSide)}`, canvas.width / 2, 80);
+    ctx.fillText(`${lText} = ${fmt(rightSide)}`, canvas.width / 2, 70);
 
+    // スコア
     ctx.textAlign = 'left';
-    ctx.font = '18px sans-serif';
+    ctx.font = '16px sans-serif';
     ctx.fillStyle = '#fff';
-    ctx.fillText(`SCORE: ${score}`, 20, 40);
+    ctx.fillText(`SCORE: ${score}`, 20, 30);
+
+    // 弾 (黄色ではっきり描画)
+    ctx.fillStyle = '#ffff00';
+    bullets.forEach(b => {
+        ctx.fillRect(b.x - 2, b.y, 4, 15);
+    });
 
     // 敵
     enemies.forEach(en => {
-        ctx.shadowBlur = 10; ctx.shadowColor = en.color;
         ctx.fillStyle = en.color;
         ctx.beginPath(); ctx.arc(en.x, en.y, 25, 0, Math.PI*2); ctx.fill();
-        ctx.shadowBlur = 0;
-        ctx.fillStyle = 'white'; ctx.textAlign = 'center'; ctx.font = 'bold 18px sans-serif';
+        ctx.fillStyle = 'white'; ctx.font = 'bold 18px sans-serif';
         ctx.fillText(en.label, en.x, en.y + 7);
     });
 
     // 自機
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = '#00d2d3';
     ctx.beginPath();
     ctx.moveTo(player.x, player.y - 20);
     ctx.lineTo(player.x - 15, player.y + 15);
     ctx.lineTo(player.x + 15, player.y + 15);
     ctx.fill();
+
+    // 操作ガイド (ジョイスティック)
+    if (joystick.active) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.beginPath(); ctx.arc(joystick.startX, joystick.startY, 40, 0, Math.PI*2); ctx.stroke();
+    }
 }
 
 generateEquation();
